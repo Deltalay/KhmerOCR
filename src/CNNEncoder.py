@@ -5,7 +5,7 @@ import numpy as np
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
 
-# --- CNN encoder (minimal)
+# --- CNN encoder
 import torch.nn as nn
 import torch.nn.functional as F
 
