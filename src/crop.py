@@ -74,7 +74,7 @@ def _phash_dedup(
 
 def run_cropper(
     image_path: Path = ROOT.parent / "assets" / "test1.jpg", 
-    model_path: Path = ROOT / "model" / "yolo.pt",             # src/model
+    model_path: Path = ROOT.parent / "models" / "yolo.pt",             # src/model
     out_dir: Path = ROOT / "cropped",                          # src/cropped
     imgsz: int = 1024,
     conf: float = 0.25,
