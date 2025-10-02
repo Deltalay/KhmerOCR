@@ -1,18 +1,16 @@
-import cv2
-import numpy as np
 from doclayout_yolo import YOLOv10
+from config import YOLO_PATH, LABEL
 
 
 def run_detector(
     image_path: str = "assets/test1.jpg",
-    model_path: str = "model/yolo.pt",
-    out_path: str = "result.jpg",
-    imgsz: int = 1024,
+    model_path: str = YOLO_PATH,
+    imgsz: int = 1120,
     conf: float = 0.25,
     iou: float = 0.55,
     device: str = "cuda:0",
     max_det: int = 300,
-) -> None:
+) -> list[dict]:
     """
     Run YOLOv10 detector on a single image and save the annotated result.
 
@@ -30,7 +28,7 @@ def run_detector(
     model = YOLOv10(model_path)
 
     # Perform prediction
-    det_res = model.predict(
+    results = model.predict(
         image_path,
         imgsz=imgsz,
         conf=conf,
@@ -38,12 +36,14 @@ def run_detector(
         device=device,
         max_det=max_det,
     )
-
-    # Annotate and save the result
-    annotated_frame = det_res[0].plot(pil=True, line_width=5, font_size=20)
-    annotated_frame = cv2.cvtColor(np.array(annotated_frame), cv2.COLOR_RGB2BGR)
-    cv2.imwrite(out_path, annotated_frame)
-
-
-if __name__ == "__main__":
-    run_detector()
+    detection = []
+    for result in results:
+        boxes = result.boxes
+        for box in boxes:
+            eachBox = {
+                "label": LABEL.get(int(box.cls[0])),
+                "xyxyn": box.xyxyn[0].tolist(),
+                "xyxy": box.xyxy[0].tolist(),
+            }
+            detection.append(eachBox)
+    return detection
