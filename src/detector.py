@@ -40,8 +40,12 @@ def run_detector(
     for result in results:
         boxes = result.boxes
         for box in boxes:
+            label = int(box.cls[0])
+            print(label)
+            if label == 6:
+                continue
             eachBox = {
-                "label": LABEL.get(int(box.cls[0])),
+                "label": LABEL.get(label),
                 "xyxyn": box.xyxyn[0].tolist(),
                 "xyxy": box.xyxy[0].tolist(),
             }
