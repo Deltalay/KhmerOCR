@@ -7,7 +7,7 @@ class Tokenizer:
             dec = ord(i)
             #  0 - 9
             if dec >= 48 and dec <= 57:
-                # +1 for handle 0
+                # + 3 because 0
                 dec = khmer_max + 3 - 48 + dec
                 token.append(dec)
                 continue
@@ -22,6 +22,12 @@ class Tokenizer:
             # khmer_max + 2 = UNK
             token.append(khmer_max + 2)
         return token
+
+    def blank_id(self):
+        return 0
+
+    def get_size(self):
+        return 141  # This is contstant
 
     def decode(self, token):
         text = []
