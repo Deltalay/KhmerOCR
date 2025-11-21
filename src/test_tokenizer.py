@@ -20,6 +20,7 @@ class Tokenizer:
                 token.append(dec)
                 continue
             # khmer_max + 2 = UNK
+            # 0 is reserve for blank
             token.append(khmer_max + 2)
         return token
 
