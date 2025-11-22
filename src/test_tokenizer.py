@@ -1,56 +1,64 @@
 class Tokenizer:
+    def __init__(self):
+        self.khmer_start = 6016
+        self.khmer_end = 6143
+        self.khmer_max = self.khmer_end - self.khmer_start
+
     def encode(self, text):
         token = []
-        # Range from 6016 - 6143
-        khmer_max = 6143 - 6015
-        for i in text:
-            dec = ord(i)
-            #  0 - 9
-            if dec >= 48 and dec <= 57:
-                # + 3 because 0
-                dec = khmer_max + 3 - 48 + dec
-                token.append(dec)
+        for ch in text:
+            code = ord(ch)
+
+
+            if self.khmer_start <= code <= self.khmer_end:
+                token.append(code - self.khmer_start + 1)
                 continue
-            if dec >= 6016 and dec <= 6143:
-                dec = dec - 6015
-                token.append(dec)
+
+            if ch == " ":
+                token.append(self.khmer_max + 1 + 1)
                 continue
-            if i == " ":
-                dec = khmer_max + 1
-                token.append(dec)
+
+            # ASCII digits
+            if "0" <= ch <= "9":
+                token.append(self.khmer_max + 1 + 1 + 1 + (ord(ch) - 48))
                 continue
-            # khmer_max + 2 = UNK
-            # 0 is reserve for blank
-            token.append(khmer_max + 2)
+
+            # UNK
+            token.append(self.khmer_max + 1 + 1)
+
         return token
 
     def blank_id(self):
         return 0
 
     def get_size(self):
-        return 141  # This is contstant
+        # blank + khmer + space + UNK + digits(10)
+        return 1 + self.khmer_max + 1 + 1 + 10
 
-    def decode(self, token):
+    def decode(self, tokens):
         text = []
-        khmer_max = 6143 - 6015
-        for i in token:
-            if i == khmer_max + 1:
+        for t in tokens:
+            if t == 0:
+                continue
+
+            if 1 <= t <= self.khmer_max + 1:
+                text.append(chr(self.khmer_start + t - 1))
+                continue
+
+            if t == self.khmer_max + 2:
                 text.append(" ")
                 continue
-            # Normal Khmer Text
-            if i >= 1 and i <= khmer_max:
-                dec = i + 6015
-                text.append(chr(dec))
+
+            if self.khmer_max + 3 <= t <= self.khmer_max + 12:
+                digit = t - (self.khmer_max + 3)
+                text.append(chr(digit + 48))
                 continue
-            # This should be handle number
-            if i >= khmer_max + 3 - 48:
-                dec = i - khmer_max - 3 + 48
-                text.append(chr(dec))
-                continue
+
             text.append("UNK")
+
         return "".join(text)
 
 
 tokenizer = Tokenizer()
-print(tokenizer.encode("សាលារ រៀន 01234 ១២៣៤"))
-print(tokenizer.decode(tokenizer.encode("សាលារ រៀន 01234 ១២៣៤")))
+print(tokenizer.encode("សាលារ រៀន 01234 ១២៣៤ afdsa"))
+print(tokenizer.decode(tokenizer.encode("សាលារ រៀន 01234 ១២៣៤ afdsa")))
