@@ -111,16 +111,6 @@ for epoch in range(num_epochs):
                 pred_texts.append(pred_str)
                 target_texts.append(target_str)
 
-            pred_sequence = torch.argmax(outputs, dim=2).permut(1, 0) # [B, T]
-            start = 0
-            for batch, targetlen in enumerate(target_lengths):
-                 target_sequence = targets[start:start + targetlen]
-                 start += targetlen
-                 pred_texts = tokenizer.decode(pred_sequence[batch].cpu().numpy())
-                 target_texts = tokenizer.decode(target_sequence.cpu().numpy())
-
-                 pred_texts.append(pred_texts)
-                 target_texts.append(target_texts)
 
     avg_val_loss = val_loss / len(val_loader)
 
@@ -129,7 +119,6 @@ for epoch in range(num_epochs):
 
     print(
         f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, CER Loss: {cer_result:.4f}, WER Loss: {wer_result:.4f}"
-        f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, CER Loss: {cer_result:.4f}, WER Loss: {cer_result:.4f}"
     )
 
     checkpoint_path = os.path.join(save_dir, f"epoch_{epoch + 1}.pt")
