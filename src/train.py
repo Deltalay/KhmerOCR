@@ -99,6 +99,18 @@ for epoch in range(num_epochs):
             val_loss += loss.item()
 
             # Decode for Prediction
+            pred_sequence = torch.argmax(outputs, dim=2).permute(1, 0)  # [B, T]
+            start = 0
+            for batch, targetlen in enumerate(target_lengths):
+                target_sequence = targets[start:start + targetlen]
+                start += targetlen
+
+                pred_str = tokenizer.decode(pred_sequence[batch].cpu().numpy())
+                target_str = tokenizer.decode(target_sequence.cpu().numpy())
+
+                pred_texts.append(pred_str)
+                target_texts.append(target_str)
+
             pred_sequence = torch.argmax(outputs, dim=2).permut(1, 0) # [B, T]
             start = 0
             for batch, targetlen in enumerate(target_lengths):
@@ -116,6 +128,7 @@ for epoch in range(num_epochs):
     wer_result = wer_metric(pred_texts, target_texts)
 
     print(
+        f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, CER Loss: {cer_result:.4f}, WER Loss: {wer_result:.4f}"
         f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, CER Loss: {cer_result:.4f}, WER Loss: {cer_result:.4f}"
     )
 
