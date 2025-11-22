@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torchmetrics.text import CharErrorRate, WordErrorRate
 
 from dataloader import DataloaderProj
 from load import load_labels, split_dataset
@@ -44,7 +45,7 @@ model = PretrainedOCR(num_classes=vocab_size).to(device)
 ctc_loss = nn.CTCLoss(blank=tokenizer.blank_id(), zero_infinity=True)
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-save_dir = "./checkpoints"
+save_dir = "./checkpoints01"
 os.makedirs(save_dir, exist_ok=True)
 
 num_epochs = 30
@@ -77,8 +78,11 @@ for epoch in range(num_epochs):
 
     avg_train_loss = train_loss / len(train_loader)
 
+    cer_metric = CharErrorRate().to(device)
+    wer_metric = WordErrorRate().to(device)
     model.eval()
     val_loss = 0
+    pred_texts, target_texts = [], []
     with torch.no_grad():
         for images, targets, target_lengths in val_loader:
             images = images.to(device)
@@ -94,10 +98,25 @@ for epoch in range(num_epochs):
             loss = ctc_loss(outputs, targets, input_lengths, target_lengths)
             val_loss += loss.item()
 
+            # Decode for Prediction
+            pred_sequence = torch.argmax(outputs, dim=2).permut(1, 0) # [B, T]
+            start = 0
+            for batch, targetlen in enumerate(target_lengths):
+                 target_sequence = targets[start:start + targetlen]
+                 start += targetlen
+                 pred_texts = tokenizer.decode(pred_sequence[batch].cpu().numpy())
+                 target_texts = tokenizer.decode(target_sequence.cpu().numpy())
+
+                 pred_texts.append(pred_texts)
+                 target_texts.append(target_texts)
+
     avg_val_loss = val_loss / len(val_loader)
 
+    cer_result = cer_metric(pred_texts, target_texts)
+    wer_result = wer_metric(pred_texts, target_texts)
+
     print(
-        f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
+        f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, CER Loss: {cer_result:.4f}, WER Loss: {cer_result:.4f}"
     )
 
     checkpoint_path = os.path.join(save_dir, f"epoch_{epoch + 1}.pt")
@@ -108,6 +127,8 @@ for epoch in range(num_epochs):
             "optimizer_state_dict": optimizer.state_dict(),
             "train_loss": avg_train_loss,
             "val_loss": avg_val_loss,
+            "wer": wer_result,
+            "cer": cer_result,
         },
         checkpoint_path,
     )
