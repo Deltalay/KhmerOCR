@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from feature import CNNFeatureExtraction2D
 device = "cuda"
 class ViTMultiHeadAttention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0.01, proj_drop=0.01):
@@ -67,7 +66,7 @@ class ViTEncoderBlock(nn.Module):
 class KhmerOCRViT(nn.Module):
     def __init__(self, embed_dim=256, H_patches=16, W_patches=32, num_heads=8, depth=6, num_classes=128):
         super().__init__()
-        self.cnn = CNNFeatureExtraction2D(embed_dim, H_patches, W_patches)
+        self.cnn = resnet_50(embed_dim, H_patches, W_patches)
         self.encoder = nn.ModuleList([
             ViTEncoderBlock(embed_dim, num_heads) for _ in range(depth)
         ])
