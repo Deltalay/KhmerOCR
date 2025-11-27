@@ -36,14 +36,13 @@ class GraphemeTokenizer:
         if vocab is None:
             vocab = {}
 
-        self.vocab = vocab              # cluster → ID
-        self.id_to_token = {}           # ID → cluster
+        self.vocab = vocab            
+        self.id_to_token = {}         
 
         # load reverse map
         for k, v in self.vocab.items():
             self.id_to_token[v] = k
 
-    # ---- vocabulary building ----
 
     def add_token(self, token):
         """
@@ -62,7 +61,7 @@ class GraphemeTokenizer:
             for g in split_graphemes(t):
                 self.add_token(g)
 
-    # ---- encoding / decoding ----
+
 
     def encode(self, text):
         """
@@ -78,10 +77,7 @@ class GraphemeTokenizer:
         return ids
 
     def decode(self, ids):
-        """
-        Convert list of IDs → Khmer text.
-        Ignores blank (0).
-        """
+
         out = []
         for i in ids:
             if i == self.blank:
@@ -104,18 +100,4 @@ class GraphemeTokenizer:
 
 if __name__ == "__main__":
     tok = GraphemeTokenizer()
-
-    text = "សាលារៀន សួស្តី កម្ពុជា"
-
-
-    encoded = tok.encode(text)
-    print("Encoded:", encoded)
-
-    decoded = tok.decode(encoded)
-    print("Decoded:", decoded)
-    text = "សាលា សួស្តី កម្ពុជា"
-    encoded = tok.encode(text)
-    print("Encoded:", encoded)
-
-    decoded = tok.decode(encoded)
-    print("Decoded:", decoded)
+    tok.build_vocab_from_dataset()

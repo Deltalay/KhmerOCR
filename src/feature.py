@@ -2,7 +2,68 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 device = "cuda"
+# class Learned2DPositionalEncoding(nn.Module):
+#     def __init__(self, H_patches, W_patches, dim):
+#         super().__init__()
+#         self.row_embed = nn.Parameter(torch.zeros(1, H_patches, 1, dim))
+#         self.col_embed = nn.Parameter(torch.zeros(1, 1, W_patches, dim))
 
+#     def forward(self, x):
+#         # x: (B, D, H, W)
+#         B, D, H, W = x.shape
+
+#         # Permute to (B, H, W, D) to add position embeddings
+#         x = x.permute(0, 2, 3, 1)  # -> (B, H, W, D)
+
+#         # Add positional encodings (broadcastable)
+#         x = x + self.row_embed[:, :H, :, :] + self.col_embed[:, :, :W, :]
+
+#         # Flatten spatial dims
+#         x = x.view(B, H * W, D)  # -> (B, N, D)
+
+#         return x
+# class CNNFeatureExtraction2D(nn.Module):
+#     def __init__(self, embed_dim=256, H_patches=8, W_patches=16):
+#         super().__init__()
+#         self.features = nn.Sequential(
+#             nn.Conv2d(3, 32, 3, padding=1), 
+#             nn.BatchNorm2d(32), 
+#             nn.ReLU(inplace=True),
+
+
+#             nn.Conv2d(32, 64, 3, padding=1), 
+#             nn.BatchNorm2d(64),
+#             nn.ReLU(inplace=True),
+#             nn.MaxPool2d(2,2),
+            
+            
+#             nn.Conv2d(64, 128, 3, padding=1), 
+#             nn.BatchNorm2d(128),
+#             nn.ReLU(inplace=True),
+#             nn.MaxPool2d(2,2),
+            
+            
+#             nn.Conv2d(128, 256, 3, padding=1), 
+#             nn.BatchNorm2d(256), 
+#             nn.ReLU(inplace=True),
+
+#             nn.Conv2d(256, 512, 3, padding=1), 
+#             nn.BatchNorm2d(512), 
+#             nn.ReLU(inplace=True),
+
+#             nn.Conv2d(512, 1024, 3, padding=1), 
+#             nn.BatchNorm2d(1024),
+#             nn.ReLU(inplace=True)
+#         )
+#         self.patch_embed = nn.Conv2d(1024, embed_dim, kernel_size=3, stride=2, padding=1)
+#         self.pos_embed_2d = Learned2DPositionalEncoding(H_patches, W_patches, embed_dim)
+
+#     def forward(self, x):
+#         x = self.features(x)        
+#         x = self.patch_embed(x)
+#         x = self.pos_embed_2d(x)     
+        
+#         return x
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -63,11 +124,13 @@ class CNNFeatureExtraction2D(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         )
 
-        # ResNet-50 Bottleneck layers
         self.layer1 = self._make_layer(64, 64, 3, stride=1)
-        self.layer2 = self._make_layer(256, 128, 4, stride=2)
-        self.layer3 = self._make_layer(512, 256, 6, stride=2)
-        self.layer4 = self._make_layer(1024, 512, 3, stride=2)
+        in_channels = 64 * Bottleneck.expansion  # 256
+        self.layer2 = self._make_layer(in_channels, 128, 4, stride=2)
+        in_channels = 128 * Bottleneck.expansion  # 512
+        self.layer3 = self._make_layer(in_channels, 256, 6, stride=2)
+        in_channels = 256 * Bottleneck.expansion  # 1024
+        self.layer4 = self._make_layer(in_channels, 512, 3, stride=2)
 
         # Projection to embedding dim
         self.proj = nn.Conv2d(2048, embed_dim, kernel_size=3, stride=1, padding=1)
