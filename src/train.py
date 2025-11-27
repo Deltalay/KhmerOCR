@@ -1,137 +1,174 @@
-import os
-
 import torch
+from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torchmetrics.text import CharErrorRate, WordErrorRate
-
+import os
+from torchvision.transforms import v2
+from ViTTest import KhmerOCRViT
 from dataloader import DataloaderProj
 from load import load_labels, split_dataset
-from model import PretrainedOCR
-
-device = "cuda"
+from torchmetrics.text import CharErrorRate, WordErrorRate
 from tokenizer import Tokenizer
 
+# -------------------------------
+# Device
+# -------------------------------
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# -------------------------------
+# Tokenizer
+# -------------------------------
 tokenizer = Tokenizer()
+PAD_ID = tokenizer.get_size()  # New ID for padding
+vocab_size = tokenizer.get_size() + 1  # +1 for PAD token
 
-
-def collate_fn_ctc(batch):
+# -------------------------------
+# Collate function for CE
+# -------------------------------
+def collate_fn_ce(batch):
     images, labels = zip(*batch)
-    images = torch.stack(images)
-    label_lengths = torch.tensor([len(l) for l in labels], dtype=torch.long)
-    labels_concat = torch.cat(labels)
-    return images, labels_concat, label_lengths
+    images = torch.stack(images)  # (B, C, H, W)
+    
+    max_len = max(len(l) for l in labels)
+    padded_labels = torch.full((len(labels), max_len), fill_value=PAD_ID, dtype=torch.long)
+    
+    for i, l in enumerate(labels):
+        padded_labels[i, :len(l)] = torch.tensor(l, dtype=torch.long)
+    
+    return images, padded_labels
 
-
+# -------------------------------
+# Load datasets
+# -------------------------------
 image_paths, labels = load_labels("labels.txt")
-(train_img, train_labels), (val_img, val_labels) = split_dataset(
-    image_paths, labels, val_ratio=0.2
-)
+(train_img, train_labels), (val_img, val_labels) = split_dataset(image_paths, labels, val_ratio=0.2)
 
-train_dataset = DataloaderProj(train_img, train_labels, tokenizer, img_size=(224, 224))
-val_dataset = DataloaderProj(val_img, val_labels, tokenizer, img_size=(224, 224))
+train_dataset = DataloaderProj(train_img, train_labels, tokenizer, img_size=(64, 256))
+val_dataset = DataloaderProj(val_img, val_labels, tokenizer, img_size=(64, 256), type="validation")
 
-train_loader = DataLoader(
-    train_dataset, batch_size=16, shuffle=True, collate_fn=collate_fn_ctc
-)
-val_loader = DataLoader(
-    val_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn_ctc
-)
+train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_ce)
+val_loader = DataLoader(val_dataset, batch_size=256, shuffle=False, collate_fn=collate_fn_ce)
 
-vocab_size = tokenizer.get_size()
-model = PretrainedOCR(num_classes=vocab_size).to(device)
+# -------------------------------
+# Model, Loss, Optimizer
+# -------------------------------
+model = KhmerOCRViT(num_classes=vocab_size, embed_dim=512, num_heads=16).to(device)
+ce_loss = nn.CrossEntropyLoss(ignore_index=PAD_ID)
+optimizer = optim.AdamW(model.parameters(), lr=5e-4)
 
-ctc_loss = nn.CTCLoss(blank=tokenizer.blank_id(), zero_infinity=True)
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+# -------------------------------
+# Metrics
+# -------------------------------
+cer_metric = CharErrorRate().to(device)
+wer_metric = WordErrorRate().to(device)
 
-save_dir = "./checkpoints01"
+# -------------------------------
+# Training
+# -------------------------------
+save_dir = "./checkpoints"
 os.makedirs(save_dir, exist_ok=True)
+num_epochs = 100
 
-num_epochs = 30
 for epoch in range(num_epochs):
+    cer_metric.reset()
+    wer_metric.reset()
+
+    # -------------------
+    # TRAINING
+    # -------------------
     model.train()
-    i = 0
-    train_loss = 0
-    for images, targets, target_lengths in train_loader:
+    train_loss = 0.0
+
+    for step, (images, targets) in enumerate(train_loader):
         images = images.to(device)
-        targets = targets.to(device)
-        target_lengths = target_lengths.to(device)
+        targets = targets.to(device)  # (B, T_target)
 
-        outputs = model(images)
-        outputs = outputs.permute(1, 0, 2)
-        input_lengths = torch.full(
-            size=(images.size(0),), fill_value=outputs.size(0), dtype=torch.long
-        ).to(device)
+        B = images.size(0)
+        outputs = model(images)  # (B, T_out, V)
+        T_out = outputs.size(1)
+        vocab_size = outputs.size(2)
 
-        loss = ctc_loss(outputs, targets, input_lengths, target_lengths)
+        # Pad/truncate targets to match model output length
+        padded_targets = torch.full((B, T_out), fill_value=PAD_ID, dtype=torch.long, device=targets.device)
+        for i, tgt_seq in enumerate(targets):
+            length = min(len(tgt_seq), T_out)
+            padded_targets[i, :length] = tgt_seq[:length]
+
+        # Compute CE loss
+        loss = ce_loss(outputs.reshape(-1, vocab_size), padded_targets.reshape(-1))
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        if (i + 1) % 100 == 0:
-            print(
-                f"[Step {i + 1}/{len(train_loader)}] Training Loss: {loss.item():.4f}"
-            )
-        i = i + 1
+
         train_loss += loss.item()
+        if (step + 1) % 100 == 0:
+            print(f"[Train {step+1}/{len(train_loader)}] Loss: {loss.item():.4f}")
 
     avg_train_loss = train_loss / len(train_loader)
 
-    cer_metric = CharErrorRate().to(device)
-    wer_metric = WordErrorRate().to(device)
+    # -------------------
+    # VALIDATION
+    # -------------------
     model.eval()
-    val_loss = 0
-    pred_texts, target_texts = [], []
+    val_loss = 0.0
+
     with torch.no_grad():
-        for images, targets, target_lengths in val_loader:
+        for images, targets in val_loader:
             images = images.to(device)
             targets = targets.to(device)
-            target_lengths = target_lengths.to(device)
 
-            outputs = model(images)
-            outputs = outputs.permute(1, 0, 2)
-            input_lengths = torch.full(
-                size=(images.size(0),), fill_value=outputs.size(0), dtype=torch.long
-            ).to(device)
+            B = images.size(0)
+            outputs = model(images)  # (B, T_out, V)
+            T_out = outputs.size(1)
+            vocab_size = outputs.size(2)
 
-            loss = ctc_loss(outputs, targets, input_lengths, target_lengths)
+            # Pad/truncate targets to match model output length
+            padded_targets = torch.full((B, T_out), fill_value=PAD_ID, dtype=torch.long, device=targets.device)
+            for i, tgt_seq in enumerate(targets):
+                length = min(len(tgt_seq), T_out)
+                padded_targets[i, :length] = tgt_seq[:length]
+
+            # Compute CE loss
+            loss = ce_loss(outputs.reshape(-1, vocab_size), padded_targets.reshape(-1))
             val_loss += loss.item()
 
-            # Decode for Prediction
-            pred_sequence = torch.argmax(outputs, dim=2).permute(1, 0)  # [B, T]
-            start = 0
-            for batch, targetlen in enumerate(target_lengths):
-                target_sequence = targets[start:start + targetlen]
-                start += targetlen
+            # -------------------
+            # Token-level CER/WER
+            # -------------------
+            pred_tokens = outputs.argmax(dim=2)  # (B, T_out)
+            pred_texts = []
+            target_texts = []
 
-                pred_str = tokenizer.decode(pred_sequence[batch].cpu().numpy())
-                target_str = tokenizer.decode(target_sequence.cpu().numpy())
+            for pred_seq, tgt_seq in zip(pred_tokens, padded_targets):
+                pred_seq = [t.item() for t in pred_seq if t.item() != PAD_ID]
+                tgt_seq = [t.item() for t in tgt_seq if t.item() != PAD_ID]
+                pred_texts.append(tokenizer.decode(pred_seq))
+                target_texts.append(tokenizer.decode(tgt_seq))
 
-                pred_texts.append(pred_str)
-                target_texts.append(target_str)
-
+            cer_metric.update(pred_texts, target_texts)
+            wer_metric.update(pred_texts, target_texts)
 
     avg_val_loss = val_loss / len(val_loader)
-
-    cer_result = cer_metric(pred_texts, target_texts)
-    wer_result = wer_metric(pred_texts, target_texts)
+    cer = cer_metric.compute().item()
+    wer = wer_metric.compute().item()
 
     print(
-        f"Epoch [{epoch + 1}/{num_epochs}] - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, CER Loss: {cer_result:.4f}, WER Loss: {wer_result:.4f}"
+        f"Epoch [{epoch+1}/{num_epochs}] "
+        f"Train Loss: {avg_train_loss:.4f} | "
+        f"Val Loss: {avg_val_loss:.4f} | "
+        f"CER: {cer:.4f} | WER: {wer:.4f}"
     )
 
-    checkpoint_path = os.path.join(save_dir, f"epoch_{epoch + 1}.pt")
-    torch.save(
-        {
-            "epoch": epoch + 1,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "train_loss": avg_train_loss,
-            "val_loss": avg_val_loss,
-            "wer": wer_result,
-            "cer": cer_result,
-        },
-        checkpoint_path,
-    )
+    # -------------------
+    # Save checkpoint
+    # -------------------
+    checkpoint_path = f"./checkpoints/epoch_{epoch+1}.pt"
+    torch.save({
+        'epoch': epoch+1,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'train_loss': avg_train_loss,
+        'val_loss': avg_val_loss,
+    }, checkpoint_path)
     print(f"Saved checkpoint: {checkpoint_path}")
